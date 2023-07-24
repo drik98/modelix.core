@@ -68,7 +68,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 LanguageRegistry
             } from "@modelix/ts-model-api";
             
-            import { computed, ComputedRef, Ref, unref } from "vue";
+            import { computed, WritableComputedRef, Ref, unref } from "vue";
             
             ${language.languageDependencies().joinToString("\n") {
             """import * as ${it.simpleClassName()} from "./${it.simpleClassName()}";"""
@@ -98,47 +98,47 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 is ProcessedProperty -> {
                     val rawValueName = feature.rawValueName()
                     val rawPropertyText = """
-                         const computed_$rawValueName(): ComputedRef<string|undefined> = computed<string|undefined>({
+                         private computed_$rawValueName: WritableComputedRef<string|undefined> = computed<string|undefined>({
                             get: () => this._node.getPropertyValue("${feature.originalName}"),
-                            set: (val) => this._node.setPropertyValue("${feature.originalName}", value)
+                            set: (value: string|undefined) => this._node.setPropertyValue("${feature.originalName}", value)
                         });
-                        public get $rawValueName(): ComputedRef<string|undefined> {
-                            return computed_$rawValueName;
+                        public get $rawValueName(): WritableComputedRef<string|undefined> {
+                            return this.computed_$rawValueName;
                         }
                     """.trimIndent()
                     val typedPropertyText = if (feature.type is PrimitivePropertyType) {
                         when((feature.type as PrimitivePropertyType).primitive) {
                             Primitive.INT -> {
                                 """
-                                const computed_${feature.generatedName}(): ComputedRef<number> = computed<number>({
-                                    get: () => return this.${rawValueName} ? parseInt(this.${rawValueName}) : 0,
-                                    set: (val) => this.${rawValueName} = value.toString()
+                                private computed_${feature.generatedName}: WritableComputedRef<number> = computed<number>({
+                                    get: () => this.computed_${rawValueName}.value ? parseInt(this.${rawValueName}.value!!) : 0,
+                                    set: (value: number) => this.computed_${rawValueName}.value = value.toString()
                                 });
-                                public get ${feature.generatedName}(): ComputedRef<number> {
-                                    return computed_${feature.generatedName};
+                                public get ${feature.generatedName}(): WritableComputedRef<number> {
+                                    return this.computed_${feature.generatedName};
                                 }
                                 
                             """.trimIndent()
                             }
                             Primitive.BOOLEAN -> {
                                 """
-                                const computed_${feature.generatedName}(): ComputedRef<boolean> = computed<boolean>({
-                                    get: () => return this.${rawValueName} === "true",
-                                    set: (val) => this.${rawValueName} = value ? "true" : "false"
+                                private computed_${feature.generatedName}: WritableComputedRef<boolean> = computed<boolean>({
+                                    get: () => this.computed_${rawValueName}.value === "true",
+                                    set: (value: boolean) => this.computed_${rawValueName}.value = value ? "true" : "false"
                                 });
-                                public get ${feature.generatedName}(): ComputedRef<boolean> {
-                                    return computed_${feature.generatedName};
+                                public get ${feature.generatedName}(): WritableComputedRef<boolean> {
+                                    return this.computed_${feature.generatedName};
                                 }
                                 
                             """.trimIndent()
                             }
                             Primitive.STRING -> """
-                                const computed_${feature.generatedName}(): ComputedRef<string> = computed<string>({
-                                    get: () => return this.${rawValueName} ?? "",
-                                    set: (val) => this.${rawValueName} = value
+                                private computed_${feature.generatedName}: WritableComputedRef<string> = computed<string>({
+                                    get: () => this.computed_${rawValueName}.value ?? "",
+                                    set: (value: string) => this.computed_${rawValueName}.value = value
                                 });
-                                public get ${feature.generatedName}(): ComputedRef<string> {
-                                    return computed_${feature.generatedName};
+                                public get ${feature.generatedName}(): WritableComputedRef<string> {
+                                    return this.computed_${feature.generatedName};
                                 }
                                 
                             """.trimIndent()
@@ -154,15 +154,15 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     val languagePrefix = typeRef.languagePrefix(concept.language)
                     val entityType = "$languagePrefix${typeRef.nodeWrapperInterfaceName()}"
                     """
-                    const computed_${feature.generatedName}(): ComputedRef<$entityType | undefined> = computed<$entityType | undefined>({
+                    private computed_${feature.generatedName}: WritableComputedRef<$entityType | undefined> = computed<$entityType | undefined>({
                         get: () => {
                             let target = this._node.getReferenceTargetNode("${feature.originalName}");
                             return target ? LanguageRegistry.INSTANCE.wrapNode(target) as $entityType : undefined;
                         },
-                        set: (val) => this._node.setReferenceTargetNode("${feature.originalName}", value?.unwrap());
+                        set: (value: $entityType | undefined) => this._node.setReferenceTargetNode("${feature.originalName}", value?.unwrap())
                     });
-                    public get ${feature.generatedName}(): ComputedRef<$entityType | undefined> {
-                        return computed_${feature.generatedName};
+                    public get ${feature.generatedName}(): WritableComputedRef<$entityType | undefined> {
+                        return this.computed_${feature.generatedName};
                     }
                 """.trimIndent()
                 }
@@ -181,25 +181,25 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             when (feature) {
                 is ProcessedProperty -> {
                     val rawPropertyText = """
-                        ${feature.rawValueName()}: ComputedRef<string | undefined>
+                        ${feature.rawValueName()}: WritableComputedRef<string | undefined>
                     """.trimIndent()
                     val typedPropertyText = if (feature.type is PrimitivePropertyType) {
                         when ((feature.type as PrimitivePropertyType).primitive) {
                             Primitive.BOOLEAN -> {
                                 """
-                                ${feature.generatedName}: ComputedRef<boolean>
+                                ${feature.generatedName}: WritableComputedRef<boolean>
                                 
                                 """.trimIndent()
                             }
                             Primitive.INT -> {
                                 """
-                                ${feature.generatedName}: ComputedRef<number>
+                                ${feature.generatedName}: WritableComputedRef<number>
                                 
                                 """.trimIndent()
                             }
                             Primitive.STRING -> {
                                 """
-                                ${feature.generatedName}: ComputedRef<string>
+                                ${feature.generatedName}: WritableComputedRef<string>
                                 
                                 """.trimIndent()
                             }
@@ -215,7 +215,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     val languagePrefix = typeRef.languagePrefix(concept.language)
                     val entityType = "$languagePrefix${typeRef.nodeWrapperInterfaceName()}"
                     """
-                        get ${feature.generatedName}(): ComputedRef<$entityType | undefined>;
+                        get ${feature.generatedName}(): WritableComputedRef<$entityType | undefined>;
                     """.trimIndent()
                 }
                 is ProcessedChildLink -> {
