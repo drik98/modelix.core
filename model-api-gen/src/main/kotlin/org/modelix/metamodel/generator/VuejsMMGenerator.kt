@@ -68,7 +68,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 LanguageRegistry
             } from "@modelix/ts-model-api";
             
-            import { computed, WritableComputedRef, Ref, unref } from "vue";
+            import { computed, WritableComputedRef, Ref, unref, triggerRef as triggerRefValue } from "vue";
             
             ${language.languageDependencies().joinToString("\n") {
             """import * as ${it.simpleClassName()} from "./${it.simpleClassName()}";"""
@@ -100,7 +100,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     val rawPropertyText = """
                          private computed_$rawValueName: WritableComputedRef<string|undefined> = computed<string|undefined>({
                             get: () => this._node.getPropertyValue("${feature.originalName}"),
-                            set: (value: string|undefined) => this._node.setPropertyValue("${feature.originalName}", value)
+                            set: (value: string|undefined) => {
+                              this._node.setPropertyValue("${feature.originalName}", value)
+                              triggerRefValue(this.computed_$rawValueName, value)
+                            }
                         });
                         public get $rawValueName(): WritableComputedRef<string|undefined> {
                             return this.computed_$rawValueName;
@@ -112,7 +115,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                 """
                                 private computed_${feature.generatedName}: WritableComputedRef<number> = computed<number>({
                                     get: () => this.computed_${rawValueName}.value ? parseInt(this.${rawValueName}.value!!) : 0,
-                                    set: (value: number) => this.computed_${rawValueName}.value = value.toString()
+                                    set: (value: number) => {
+                                      this.computed_${rawValueName}.value = value.toString()
+                                      triggerRefValue(this.computed_${feature.generatedName}, value)
+                                    }
                                 });
                                 public get ${feature.generatedName}(): WritableComputedRef<number> {
                                     return this.computed_${feature.generatedName};
@@ -124,7 +130,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                 """
                                 private computed_${feature.generatedName}: WritableComputedRef<boolean> = computed<boolean>({
                                     get: () => this.computed_${rawValueName}.value === "true",
-                                    set: (value: boolean) => this.computed_${rawValueName}.value = value ? "true" : "false"
+                                    set: (value: boolean) => {
+                                        this.computed_${rawValueName}.value = value ? "true" : "false"
+                                        triggerRefValue(this.computed_${feature.generatedName}, value)
+                                    }
                                 });
                                 public get ${feature.generatedName}(): WritableComputedRef<boolean> {
                                     return this.computed_${feature.generatedName};
@@ -135,7 +144,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                             Primitive.STRING -> """
                                 private computed_${feature.generatedName}: WritableComputedRef<string> = computed<string>({
                                     get: () => this.computed_${rawValueName}.value ?? "",
-                                    set: (value: string) => this.computed_${rawValueName}.value = value
+                                    set: (value: string) => {
+                                      this.computed_${rawValueName}.value = value
+                                      triggerRefValue(this.computed_${feature.generatedName}, value)
+                                    }
                                 });
                                 public get ${feature.generatedName}(): WritableComputedRef<string> {
                                     return this.computed_${feature.generatedName};
@@ -159,7 +171,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                             let target = this._node.getReferenceTargetNode("${feature.originalName}");
                             return target ? LanguageRegistry.INSTANCE.wrapNode(target) as $entityType : undefined;
                         },
-                        set: (value: $entityType | undefined) => this._node.setReferenceTargetNode("${feature.originalName}", value?.unwrap())
+                        set: (value: $entityType | undefined) => {
+                          this._node.setReferenceTargetNode("${feature.originalName}", value?.unwrap())
+                          triggerRefValue(this.computed_${feature.generatedName}, value)
+                        }
                     });
                     public get ${feature.generatedName}(): WritableComputedRef<$entityType | undefined> {
                         return this.computed_${feature.generatedName};
