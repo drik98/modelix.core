@@ -74,21 +74,31 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             """import * as ${it.simpleClassName()} from "./${it.simpleClassName()}";"""
         }}
             
+            ${language.getConcepts().joinToString("\n") { generateConcept(it) }.replaceIndent("            ")}
+
+            const wrappedNodeCache = new Map<INodeReferenceJS, ITypedNode>();
+            
+            function wrapNode(C_Concept: GeneratedConcept, node: INodeJS): ITypedNode {
+                const ref = node.getReference()
+                if(!wrappedNodeCache.has(ref)) {
+                    wrappedNodeCache.set(ref, new C_Concept(node))
+                }
+                return wrappedNodeCache.get(ref)
+            }
+            
             export class ${language.simpleClassName()} extends GeneratedLanguage {
                 public static INSTANCE: ${language.simpleClassName()} = new ${language.simpleClassName()}();
                 constructor() {
                     super("${language.name}")
                     
                     ${language.getConcepts().joinToString("\n") { concept -> """
-                        this.nodeWrappers.set("${concept.uid}", (node: INodeJS) => new ${concept.nodeWrapperImplName()}(node))
+                        this.nodeWrappers.set("${concept.uid}", wrapNode.bind(this, ${concept.nodeWrapperImplName()}))
                     """.trimIndent() }}
                 }
                 public getConcepts() {
                     return [$conceptNamesList]
                 }
             }
-            
-            ${language.getConcepts().joinToString("\n") { generateConcept(it) }.replaceIndent("            ")}
         """.trimIndent()
     }
 
