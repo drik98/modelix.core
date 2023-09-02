@@ -53,53 +53,61 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     LanguageRegistry.INSTANCE.register(${it.simpleClassName()}.INSTANCE);
                 """.trimIndent() }}
             }
-        """.trimIndent())
-    }
-
-    private fun generateLanguage(language: ProcessedLanguage): String {
-        val conceptNamesList = language.getConcepts()
-            .joinToString(", ") { it.conceptWrapperInterfaceName() }
-        return """
-            import {
-                ChildListAccessor,
-                GeneratedConcept, 
-                GeneratedLanguage,
-                IConceptJS,
-                INodeJS,
-                ITypedNode, 
-                SingleChildAccessor,
-                TypedNode,
-                LanguageRegistry
-            } from "@modelix/ts-model-api";
             
-            import { computed, WritableComputedRef, shallowReactive, Ref, unref, triggerRef } from "vue";
+            import { ChildListAccessor, IConceptJS, GeneratedConcept, INodeJS, SingleChildAccessor, ITypedNode } from "@modelix/ts-model-api";
+            import { shallowReactive } from "vue";
             
-            function triggerRefValue(ref: Ref, value: any) {
-                return triggerRef(ref)
+            export type ChildLinkDecl = {
+                kind: "CHILD",
+                type: string,
+                optional: boolean,
+                multiple: boolean
+            };
+            export type ReferenceLinkDecl = {
+                kind: "REFERENCE",
+                type: string,
+                optional: Boolean
+            };
+            export type PropertyDecl = {
+                kind: "PROPERTY",
+                type: string
+            };
+            export type RoleDecl = ChildLinkDecl | ReferenceLinkDecl | PropertyDecl;
+            export interface IVuejsGeneratedConcept extends IConceptJS {
+                get fqName(): string;
+                features: Map<string, RoleDecl>;
             }
-            
-            ${language.languageDependencies().joinToString("\n") {
-            """import * as ${it.simpleClassName()} from "./${it.simpleClassName()}";"""
-        }}
-            
-            ${language.getConcepts().joinToString("\n") { generateConcept(it) }.replaceIndent("            ")}
-
+            export interface IVuejsTypedNode extends ITypedNode {
+                _node: INodeJS;
+                _concept: IVuejsGeneratedConcept;
+            }
+  
             type INodeReferenceJS = any
-            const wrappedNodeCache = new Map<INodeReferenceJS, TypedNode>();
+            const wrappedNodeCache = new Map<INodeReferenceJS, IVuejsTypedNode>();
 
             // https://stackoverflow.com/a/68488123
-            let combine = function*(...iterators) {
+            let combine = function*(...iterators: any[]) {
               for (let it of iterators) yield* it;
             };
             
-            const enumerablePropsIterator = ["_node", "_concept"].entries()
+            function proxyName(this: IVuejsTypedNode) {
+                return "N_" + this._concept.toString()
+            }
+            
+            // satisfy typechecker as in https://stackoverflow.com/a/50603826
+            declare global  {
+                interface ProxyConstructor {
+                    new <TSource extends object, TTarget extends object>(target: TSource, handler: ProxyHandler<TSource>): TTarget;
+                }
+            }
 
-            function createProxy(C_Concept: GeneratedConcept, node: INodeJS): TypedNode {
-                const proxyHandler = {
+            function createProxy(C_Concept: IVuejsGeneratedConcept, node: INodeJS): IVuejsTypedNode {
+                const proxyHandler: ProxyHandler<INodeJS> = {
                     get(_node: INodeJS, key: string) {
                         const feature = C_Concept.features.get(key)
                         if(key === "_node") return _node;
                         if(key === "unwrap") return () => _node;
+                        if(key === "toString") return proxyName;
                         if(key === "_concept") return C_Concept;
                         if(!feature) return undefined
                         switch(feature.kind) {
@@ -127,11 +135,11 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                     case "INT": _node.setPropertyValue(key, value.toString()); break;
                                     case "BOOLEAN": _node.setPropertyValue(key, value ? "true" : "false"); break;
                                     case "STRING": _node.setPropertyValue(key, value); break;
-                                    default: throw new Exception() // enum
+                                    default: throw new Error("Unknown property type") // enum
                                 };
                                 break;
                             case "CHILD":
-                                throw Exception();
+                                throw Error("Can't update child links yet");
                                 break;
                             case "REFERENCE":
                                 _node.setReferenceTargetNode(key, value?.unwrap());
@@ -140,25 +148,54 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                         return true;
                     },
                     ownKeys(_node: INodeJS) {
-                        return combine(C_Concept.features.keys(), enumerablePropsIterator)
+                        return Array.from(C_Concept.features.keys()).concat("_node", "_concept")
                     },
-                    has(_node: INodeJS, key: string, receiver) {
-                        return Object.keys(receiver)
-                    },
-                    getPrototypeOf(_node: INodeJS) {
-                        return C_Concept;
+                    has(_node: INodeJS, key: string) {
+                        return Array.from(C_Concept.features.keys()).concat("_node", "_concept").includes(key)
                     }
                 }
-                return shallowReactive(new Proxy(node, proxyHandler))
+                return shallowReactive(new Proxy<INodeJS, IVuejsTypedNode>(node, proxyHandler))
             }
             
-            function wrapNode(C_Concept: new (_node: INodeJS) => TypedNode, node: INodeJS): TypedNode {
+            export function wrapNode(C_Concept: IVuejsGeneratedConcept, node: INodeJS): IVuejsTypedNode {
                 const ref = node.getReference()
                 if(!wrappedNodeCache.has(ref)) {
                     wrappedNodeCache.set(ref, shallowReactive(createProxy(C_Concept, node)))
                 }
                 return wrappedNodeCache.get(ref)!
             }
+            
+        """.trimIndent())
+    }
+
+    private fun generateLanguage(language: ProcessedLanguage): String {
+        val conceptNamesList = language.getConcepts()
+            .joinToString(", ") { it.conceptWrapperInterfaceName() }
+        return """
+            import {
+                ChildListAccessor,
+                GeneratedConcept, 
+                GeneratedLanguage,
+                IConceptJS,
+                INodeJS,
+                ITypedNode, 
+                SingleChildAccessor,
+                TypedNode,
+                LanguageRegistry
+            } from "@modelix/ts-model-api";
+            
+            import { computed, WritableComputedRef, shallowReactive, Ref, unref, triggerRef } from "vue";
+            import { IVuejsGeneratedConcept, IVuejsTypedNode, wrapNode, RoleDecl } from "./index";
+            
+            function triggerRefValue(ref: Ref, value: any) {
+                return triggerRef(ref)
+            }
+            
+            ${language.languageDependencies().joinToString("\n") {
+            """import * as ${it.simpleClassName()} from "./${it.simpleClassName()}";"""
+        }}
+            
+            ${language.getConcepts().joinToString("\n") { generateConcept(it) }.replaceIndent("            ")}
             
             export class ${language.simpleClassName()} extends GeneratedLanguage {
                 public static INSTANCE: ${language.simpleClassName()} = new ${language.simpleClassName()}();
@@ -178,112 +215,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
     }
 
     private fun generateConcept(concept: ProcessedConcept): String {
-        val featuresImpl = concept.getAllSuperConceptsAndSelf().flatMap { it.getOwnRoles() }.joinToString("\n") { feature ->
-            when (feature) {
-                is ProcessedProperty -> {
-                    val rawValueName = feature.rawValueName()
-                    val rawPropertyText = """
-                         private computed_$rawValueName: WritableComputedRef<string|undefined> = computed<string|undefined>({
-                            get: () => this._node.getPropertyValue("${feature.originalName}"),
-                            set: (value: string|undefined) => {
-                              this._node.setPropertyValue("${feature.originalName}", value)
-                              triggerRefValue(this.computed_$rawValueName, value)
-                            }
-                        });
-                        public get $rawValueName(): WritableComputedRef<string|undefined> {
-                            return this.computed_$rawValueName;
-                        }
-                    """.trimIndent()
-                    val typedPropertyText = if (feature.type is PrimitivePropertyType) {
-                        when((feature.type as PrimitivePropertyType).primitive) {
-                            Primitive.INT -> {
-                                """
-                                private computed_${feature.generatedName}: WritableComputedRef<number> = computed<number>({
-                                    get: () => this.computed_${rawValueName}.value ? parseInt(this.${rawValueName}.value!!) : 0,
-                                    set: (value: number) => {
-                                      this.computed_${rawValueName}.value = value.toString()
-                                      triggerRefValue(this.computed_${feature.generatedName}, value)
-                                    }
-                                });
-                                public get ${feature.generatedName}(): WritableComputedRef<number> {
-                                    return this.computed_${feature.generatedName};
-                                }
-                                
-                            """.trimIndent()
-                            }
-                            Primitive.BOOLEAN -> {
-                                """
-                                private computed_${feature.generatedName}: WritableComputedRef<boolean> = computed<boolean>({
-                                    get: () => this.computed_${rawValueName}.value === "true",
-                                    set: (value: boolean) => {
-                                        this.computed_${rawValueName}.value = value ? "true" : "false"
-                                        triggerRefValue(this.computed_${feature.generatedName}, value)
-                                    }
-                                });
-                                public get ${feature.generatedName}(): WritableComputedRef<boolean> {
-                                    return this.computed_${feature.generatedName};
-                                }
-                                
-                            """.trimIndent()
-                            }
-                            Primitive.STRING -> """
-                                private computed_${feature.generatedName}: WritableComputedRef<string> = computed<string>({
-                                    get: () => this.computed_${rawValueName}.value ?? "",
-                                    set: (value: string) => {
-                                      this.computed_${rawValueName}.value = value
-                                      triggerRefValue(this.computed_${feature.generatedName}, value)
-                                    }
-                                });
-                                public get ${feature.generatedName}(): WritableComputedRef<string> {
-                                    return this.computed_${feature.generatedName};
-                                }
-                                
-                            """.trimIndent()
-                        }
-                    } else ""
-                    """
-                        $rawPropertyText
-                        $typedPropertyText
-                    """.trimIndent()
-                }
-                is ProcessedReferenceLink -> {
-                    val typeRef = feature.type.resolved
-                    val languagePrefix = typeRef.languagePrefix(concept.language)
-                    val entityType = "$languagePrefix${typeRef.nodeWrapperInterfaceName()}"
-                    """
-                    private computed_${feature.generatedName}: WritableComputedRef<$entityType | undefined> = computed<$entityType | undefined>({
-                        get: () => {
-                            let target = this._node.getReferenceTargetNode("${feature.originalName}");
-                            return target ? LanguageRegistry.INSTANCE.wrapNode(target) as $entityType : undefined;
-                        },
-                        set: (value: $entityType | undefined) => {
-                          this._node.setReferenceTargetNode("${feature.originalName}", value?.unwrap())
-                          triggerRefValue(this.computed_${feature.generatedName}, value)
-                        }
-                    });
-                    public get ${feature.generatedName}(): WritableComputedRef<$entityType | undefined> {
-                        return this.computed_${feature.generatedName};
-                    }
-                """.trimIndent()
-                }
-                is ProcessedChildLink -> {
-                    val accessorClassName = if (feature.multiple) "ChildListAccessor" else "SingleChildAccessor"
-                    val typeRef = feature.type.resolved
-                    val languagePrefix = typeRef.languagePrefix(concept.language)
-                    """
-                        public ${feature.generatedName}: $accessorClassName<$languagePrefix${typeRef.nodeWrapperInterfaceName()}> = new $accessorClassName(this._node, "${feature.originalName}")
-                    """.trimIndent()
-                }
-                else -> ""
-            }
-        }
         val features = concept.getOwnRoles().joinToString("\n") { feature ->
             when (feature) {
                 is ProcessedProperty -> {
-                    val rawPropertyText = """
-                        ${feature.rawValueName()}: WritableComputedRef<string | undefined>
-                    """.trimIndent()
-                    val typedPropertyText = if (feature.type is PrimitivePropertyType) {
+                    if (feature.type is PrimitivePropertyType) {
                         when ((feature.type as PrimitivePropertyType).primitive) {
                             Primitive.BOOLEAN -> {
                                 """
@@ -305,10 +240,6 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                             }
                         }
                     } else ""
-                    """
-                        $rawPropertyText
-                        $typedPropertyText
-                    """.trimIndent()
                 }
                 is ProcessedReferenceLink -> {
                     val typeRef = feature.type.resolved
@@ -327,19 +258,21 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 else -> ""
             }
         }
-        val interfaceList = concept.getDirectSuperConcepts().joinToString(", ") { it.tsInterfaceRef(concept.language) }.ifEmpty { "ITypedNode" }
+        val interfaceList = concept.getDirectSuperConcepts().joinToString(", ") { it.tsInterfaceRef(concept.language) }.ifEmpty { "IVuejsTypedNode" }
         // TODO extend first super concept do reduce the number of generated members
         return """
             
-            export class ${concept.conceptWrapperImplName()} extends GeneratedConcept {
+            export class ${concept.conceptWrapperImplName()} extends GeneratedConcept implements IVuejsGeneratedConcept {
               constructor(uid: string) {
                 super(uid);
               }
               getDirectSuperConcepts(): Array<IConceptJS> {
                 return [${concept.getDirectSuperConcepts().joinToString(",") { it.languagePrefix(concept.language) + it.conceptWrapperInterfaceName() }}];
               }
-              
-              features = new Map([ ${concept.getAllSuperConceptsAndSelf().flatMap { it.getOwnRoles() }.map { """
+              get fqName() {
+                return "${concept.fqName()}";
+              }
+              features = new Map<string, RoleDecl>([ ${concept.getAllSuperConceptsAndSelf().flatMap { it.getOwnRoles() }.map { """
                   ["${it.generatedName}", ${it.serialize()}]
                   """.trimIndent()}.joinToString(", ") }])
             }
@@ -349,15 +282,8 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 ${features}
             }
             
-            export function isOfConcept_${concept.name}(node: ITypedNode | Ref<ITypedNode>): node is ${concept.nodeWrapperInterfaceName()} {
+            export function isOfConcept_${concept.name}(node: IVuejsTypedNode | Ref<IVuejsTypedNode>): node is ${concept.nodeWrapperInterfaceName()} {
                 return ${concept.conceptWrapperInterfaceName()} === unref(node)._concept;
-            }
-            
-            export class ${concept.nodeWrapperImplName()} extends TypedNode implements ${concept.nodeWrapperInterfaceName()} {
-                ${concept.getAllSuperConceptsAndSelf().joinToString("\n") {
-            """public static readonly ${it.markerPropertyName()}: boolean = true"""
-        }}
-                ${featuresImpl.replaceIndent("                ")}
             }
             
         """.trimIndent()
