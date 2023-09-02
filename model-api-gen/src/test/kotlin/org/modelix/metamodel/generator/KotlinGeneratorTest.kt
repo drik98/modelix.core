@@ -81,37 +81,12 @@ class KotlinGeneratorTest {
 
     @Test
     fun test_vuejs() {
-        val input = """
-            name: org.modelix.entities
-            concepts:
-            - name: Entity
-              properties:
-              - name: name
-              children:
-              - name: properties
-                type: Property
-                multiple: true
-                optional: true
-            - name: Property
-              children:
-              - name: type
-                type: Type
-                optional: false
-            - name: Type
-            - name: EntityType
-              extends:
-              - Type
-              references:
-              - name: entity
-                type: Entity
-                optional: false
-            enums: []
-        """.trimIndent()
-
-        val language = Yaml.default.decodeFromString<LanguageData>(input)
         //val outputDir = File(".").toPath().resolve("build").resolve("test-generator-output")
-        val outputDir = File("build/test-generator-output").toPath()
-        VuejsMMGenerator(outputDir).generate(LanguageSet(listOf(language)).process())
+        val outputDir = File("/Users/bkruck/secure-rcp/ts-kotlin-lib/src/ts/ts-model-sources/src").toPath()
+        VuejsMMGenerator(outputDir).generate(LanguageSet(File("/Users/bkruck/secure-rcp/ts-kotlin-lib/build/metamodel/exported-languages").walk()
+            .filter { it.extension.lowercase() == "json" }
+            .map { LanguageData.fromJson(it.readText()) }
+            .toList()).process())
     }
 
     @OptIn(ExperimentalPathApi::class)

@@ -1,6 +1,11 @@
 package org.modelix.metamodel.generator
 
 import com.squareup.kotlinpoet.ClassName
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
 import org.modelix.model.data.LanguageData
 import org.modelix.model.data.Primitive
 import org.modelix.model.data.PrimitivePropertyType
@@ -54,7 +59,6 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
     private fun generateLanguage(language: ProcessedLanguage): String {
         val conceptNamesList = language.getConcepts()
             .joinToString(", ") { it.conceptWrapperInterfaceName() }
-
         return """
             import {
                 ChildListAccessor,
@@ -68,7 +72,11 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 LanguageRegistry
             } from "@modelix/ts-model-api";
             
-            import { computed, WritableComputedRef, Ref, unref, triggerRef as triggerRefValue } from "vue";
+            import { computed, WritableComputedRef, shallowReactive, Ref, unref, triggerRef } from "vue";
+            
+            function triggerRefValue(ref: Ref, value: any) {
+                return triggerRef(ref)
+            }
             
             ${language.languageDependencies().joinToString("\n") {
             """import * as ${it.simpleClassName()} from "./${it.simpleClassName()}";"""
@@ -76,14 +84,80 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             
             ${language.getConcepts().joinToString("\n") { generateConcept(it) }.replaceIndent("            ")}
 
-            const wrappedNodeCache = new Map<INodeReferenceJS, ITypedNode>();
+            type INodeReferenceJS = any
+            const wrappedNodeCache = new Map<INodeReferenceJS, TypedNode>();
+
+            // https://stackoverflow.com/a/68488123
+            let combine = function*(...iterators) {
+              for (let it of iterators) yield* it;
+            };
             
-            function wrapNode(C_Concept: GeneratedConcept, node: INodeJS): ITypedNode {
+            const enumerablePropsIterator = ["_node", "_concept"].entries()
+
+            function createProxy(C_Concept: GeneratedConcept, node: INodeJS): TypedNode {
+                const proxyHandler = {
+                    get(_node: INodeJS, key: string) {
+                        const feature = C_Concept.features.get(key)
+                        if(key === "_node") return _node;
+                        if(key === "unwrap") return () => _node;
+                        if(key === "_concept") return C_Concept;
+                        if(!feature) return undefined
+                        switch(feature.kind) {
+                            case "PROPERTY":
+                                const raw = _node.getPropertyValue(key)
+                                switch(feature.type) {
+                                    case "INT": return raw ? parseInt(raw!!) : 0
+                                    case "BOOLEAN": return raw === "true"
+                                    case "STRING": return raw ?? ""
+                                    default: return "" // enum
+                                }
+                            case "CHILD":
+                                return new (feature.multiple ? ChildListAccessor : SingleChildAccessor)(_node, key);
+                            case "REFERENCE":
+                                let target = _node.getReferenceTargetNode(key);
+                                return target ? LanguageRegistry.INSTANCE.wrapNode(target) : undefined;
+                        }
+                    },
+                    set(_node: INodeJS, key: string, value: any) {
+                        const feature = C_Concept.features.get(key)
+                        if(!feature) return false
+                        switch(feature.kind) {
+                            case "PROPERTY":
+                                switch(feature.type) {
+                                    case "INT": _node.setPropertyValue(key, value.toString()); break;
+                                    case "BOOLEAN": _node.setPropertyValue(key, value ? "true" : "false"); break;
+                                    case "STRING": _node.setPropertyValue(key, value); break;
+                                    default: throw new Exception() // enum
+                                };
+                                break;
+                            case "CHILD":
+                                throw Exception();
+                                break;
+                            case "REFERENCE":
+                                _node.setReferenceTargetNode(key, value?.unwrap());
+                                break;
+                        }
+                        return true;
+                    },
+                    ownKeys(_node: INodeJS) {
+                        return combine(C_Concept.features.keys(), enumerablePropsIterator)
+                    },
+                    has(_node: INodeJS, key: string, receiver) {
+                        return Object.keys(receiver)
+                    },
+                    getPrototypeOf(_node: INodeJS) {
+                        return C_Concept;
+                    }
+                }
+                return shallowReactive(new Proxy(node, proxyHandler))
+            }
+            
+            function wrapNode(C_Concept: new (_node: INodeJS) => TypedNode, node: INodeJS): TypedNode {
                 const ref = node.getReference()
                 if(!wrappedNodeCache.has(ref)) {
-                    wrappedNodeCache.set(ref, new C_Concept(node))
+                    wrappedNodeCache.set(ref, shallowReactive(createProxy(C_Concept, node)))
                 }
-                return wrappedNodeCache.get(ref)
+                return wrappedNodeCache.get(ref)!
             }
             
             export class ${language.simpleClassName()} extends GeneratedLanguage {
@@ -92,7 +166,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     super("${language.name}")
                     
                     ${language.getConcepts().joinToString("\n") { concept -> """
-                        this.nodeWrappers.set("${concept.uid}", wrapNode.bind(this, ${concept.nodeWrapperImplName()}))
+                        this.nodeWrappers.set("${concept.uid}", wrapNode.bind(this, ${concept.conceptWrapperInterfaceName()}))
                     """.trimIndent() }}
                 }
                 public getConcepts() {
@@ -100,6 +174,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 }
             }
         """.trimIndent()
+
     }
 
     private fun generateConcept(concept: ProcessedConcept): String {
@@ -263,6 +338,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
               getDirectSuperConcepts(): Array<IConceptJS> {
                 return [${concept.getDirectSuperConcepts().joinToString(",") { it.languagePrefix(concept.language) + it.conceptWrapperInterfaceName() }}];
               }
+              
+              features = new Map([ ${concept.getAllSuperConceptsAndSelf().flatMap { it.getOwnRoles() }.map { """
+                  ["${it.generatedName}", ${it.serialize()}]
+                  """.trimIndent()}.joinToString(", ") }])
             }
             export const ${concept.conceptWrapperInterfaceName()} = new ${concept.conceptWrapperImplName()}("${concept.uid}")
             
@@ -271,7 +350,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             }
             
             export function isOfConcept_${concept.name}(node: ITypedNode | Ref<ITypedNode>): node is ${concept.nodeWrapperInterfaceName()} {
-                return '${concept.markerPropertyName()}' in unref(node).constructor;
+                return ${concept.conceptWrapperInterfaceName()} === unref(node)._concept;
             }
             
             export class ${concept.nodeWrapperImplName()} extends TypedNode implements ${concept.nodeWrapperInterfaceName()} {
@@ -312,6 +391,24 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             nameConfig.languageClass(this.language.name) + "."
         }
     }
+
+    private fun ProcessedRole.serialize() = Json.encodeToString(when(this) {
+        is ProcessedChildLink -> JsonObject(mapOf(
+            "kind" to JsonPrimitive("CHILD"),
+            "type" to JsonPrimitive(type.name),
+            "multiple" to JsonPrimitive(multiple),
+            "optional" to JsonPrimitive(optional)
+        ))
+        is ProcessedReferenceLink -> JsonObject(mapOf(
+            "kind" to JsonPrimitive("REFERENCE"),
+            "type" to JsonPrimitive(type.name),
+            "optional" to JsonPrimitive(optional)
+        ))
+        is ProcessedProperty -> JsonObject(mapOf(
+            "kind" to JsonPrimitive("PROPERTY"),
+            "type" to Json.encodeToJsonElement(this.type)
+        ))
+    })
 }
 
 private fun ProcessedProperty.rawValueName() = "raw_$generatedName"
