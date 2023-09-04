@@ -111,7 +111,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                 const allSiblings = _node.getParent()?.getChildren(_node.getRoleInParent());
                                 if(allSiblings === undefined) return undefined;
                                 const index = allSiblings.map((c) => c.getReference()).indexOf(_node.getReference())
-                                return allSiblings[index+1 % allSiblings.length]; // return next one and start from top when overflowing
+                                return allSiblings[ (index + 1) % allSiblings.length]; // return next one and start from top when overflowing
                                 break;
                         }
                         const key = keyOrSymbol as string
