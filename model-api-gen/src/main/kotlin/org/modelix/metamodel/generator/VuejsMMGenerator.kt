@@ -55,7 +55,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             }
             
             import { ChildListAccessor, IConceptJS, GeneratedConcept, INodeJS, SingleChildAccessor, ITypedNode } from "@modelix/ts-model-api";
-            import { shallowReactive } from "vue";
+            import { shallowReactive, unref, MaybeRef } from "vue";
             
             export type ChildLinkDecl = {
                 kind: "CHILD",
@@ -80,6 +80,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             export interface IVuejsTypedNode extends ITypedNode {
                 _node: INodeJS;
                 _concept: IVuejsGeneratedConcept;
+                _nextSibling?: INodeJS;
             }
   
             type INodeReferenceJS = any
@@ -90,10 +91,6 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
               for (let it of iterators) yield* it;
             };
             
-            function proxyName(this: IVuejsTypedNode) {
-                return "N_" + this._concept.toString()
-            }
-            
             // satisfy typechecker as in https://stackoverflow.com/a/50603826
             declare global  {
                 interface ProxyConstructor {
@@ -103,12 +100,22 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
 
             function createProxy(C_Concept: IVuejsGeneratedConcept, node: INodeJS): IVuejsTypedNode {
                 const proxyHandler: ProxyHandler<INodeJS> = {
-                    get(_node: INodeJS, key: string) {
+                    get(_node: INodeJS, keyOrSymbol: string | symbol) {
+                        switch(keyOrSymbol) {
+                            // case Symbol.toStringTag: return C_Concept.fqName; break; // breaks reactivity for some reason
+                            case "_node": return _node; break;
+                            case "unwrap": return () => _node; break;
+                            case "_concept": return C_Concept; break;
+                            case "_parent": return _node.getParent(); break;
+                            case "_nextSibling": 
+                                const allSiblings = _node.getParent()?.getChildren(_node.getRoleInParent());
+                                if(allSiblings === undefined) return undefined;
+                                const index = allSiblings.map((c) => c.getReference()).indexOf(_node.getReference())
+                                return allSiblings[index+1 % allSiblings.length]; // return next one and start from top when overflowing
+                                break;
+                        }
+                        const key = keyOrSymbol as string
                         const feature = C_Concept.features.get(key)
-                        if(key === "_node") return _node;
-                        if(key === "unwrap") return () => _node;
-                        if(key === "toString") return proxyName;
-                        if(key === "_concept") return C_Concept;
                         if(!feature) return undefined
                         switch(feature.kind) {
                             case "PROPERTY":
@@ -120,15 +127,21 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                     default: return "" // enum
                                 }
                             case "CHILD":
-                                return new (feature.multiple ? ChildListAccessor : SingleChildAccessor)(_node, key);
+                                const childArray = _node.getChildren(key).map((child) => LanguageRegistry.INSTANCE.wrapNode(child))
+                                if(feature.multiple) {
+                                    return childArray;
+                                } else {
+                                    return childArray[0];
+                                }
                             case "REFERENCE":
                                 let target = _node.getReferenceTargetNode(key);
                                 return target ? LanguageRegistry.INSTANCE.wrapNode(target) : undefined;
                         }
                     },
-                    set(_node: INodeJS, key: string, value: any) {
+                    set(_node: INodeJS, key: string, maybeRefValue: MaybeRef<INodeJS | any>) {
                         const feature = C_Concept.features.get(key)
                         if(!feature) return false
+                        const value = unref(maybeRefValue)
                         switch(feature.kind) {
                             case "PROPERTY":
                                 switch(feature.type) {
@@ -142,16 +155,17 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                 throw Error("Can't update child links yet");
                                 break;
                             case "REFERENCE":
-                                _node.setReferenceTargetNode(key, value?.unwrap());
+                                const unwrappedValue = value?.unwrap ? value.unwrap() : value;
+                                _node.setReferenceTargetNode(key, unwrappedValue);
                                 break;
                         }
                         return true;
                     },
                     ownKeys(_node: INodeJS) {
-                        return Array.from(C_Concept.features.keys()).concat("_node", "_concept")
+                        return Array.from<string | symbol>(C_Concept.features.keys()).concat("_node", "_concept")
                     },
                     has(_node: INodeJS, key: string) {
-                        return Array.from(C_Concept.features.keys()).concat("_node", "_concept").includes(key)
+                        return Array.from<string | symbol>(C_Concept.features.keys()).concat("_node", "_concept").includes(key)
                     }
                 }
                 return shallowReactive(new Proxy<INodeJS, IVuejsTypedNode>(node, proxyHandler))
@@ -162,6 +176,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 if(!wrappedNodeCache.has(ref)) {
                     wrappedNodeCache.set(ref, shallowReactive(createProxy(C_Concept, node)))
                 }
+                console.log("wrappedNodeCache has", wrappedNodeCache.size, "elements");
                 return wrappedNodeCache.get(ref)!
             }
             
@@ -173,13 +188,11 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             .joinToString(", ") { it.conceptWrapperInterfaceName() }
         return """
             import {
-                ChildListAccessor,
                 GeneratedConcept, 
                 GeneratedLanguage,
                 IConceptJS,
                 INodeJS,
                 ITypedNode, 
-                SingleChildAccessor,
                 TypedNode,
                 LanguageRegistry
             } from "@modelix/ts-model-api";
@@ -222,19 +235,19 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                         when ((feature.type as PrimitivePropertyType).primitive) {
                             Primitive.BOOLEAN -> {
                                 """
-                                ${feature.generatedName}: WritableComputedRef<boolean>
+                                ${feature.generatedName}: boolean;
                                 
                                 """.trimIndent()
                             }
                             Primitive.INT -> {
                                 """
-                                ${feature.generatedName}: WritableComputedRef<number>
+                                ${feature.generatedName}: number;
                                 
                                 """.trimIndent()
                             }
                             Primitive.STRING -> {
                                 """
-                                ${feature.generatedName}: WritableComputedRef<string>
+                                ${feature.generatedName}: string;
                                 
                                 """.trimIndent()
                             }
@@ -246,13 +259,13 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     val languagePrefix = typeRef.languagePrefix(concept.language)
                     val entityType = "$languagePrefix${typeRef.nodeWrapperInterfaceName()}"
                     """
-                        get ${feature.generatedName}(): WritableComputedRef<$entityType | undefined>;
+                        get ${feature.generatedName}(): $entityType | undefined;
                     """.trimIndent()
                 }
                 is ProcessedChildLink -> {
-                    val accessorClassName = if (feature.multiple) "ChildListAccessor" else "SingleChildAccessor"
+                    val N_InterfaceName = feature.type.resolved.tsInterfaceRef(concept.language)
                     """
-                        ${feature.generatedName}: $accessorClassName<${feature.type.resolved.tsInterfaceRef(concept.language)}>
+                        ${feature.generatedName}: ${if (feature.multiple) "Array<$N_InterfaceName>" else N_InterfaceName }
                     """.trimIndent()
                 }
                 else -> ""
