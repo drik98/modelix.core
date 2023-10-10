@@ -54,23 +54,30 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 """.trimIndent() }}
             }
             
-            import { ChildListAccessor, IConceptJS, GeneratedConcept, INodeJS, SingleChildAccessor, ITypedNode } from "@modelix/ts-model-api";
-            import { shallowReactive, unref, MaybeRef } from "vue";
+            import {
+                ChildListAccessor,
+                IConceptJS,
+                GeneratedConcept,
+                INodeJS,
+                SingleChildAccessor,
+                ITypedNode,
+            } from "@modelix/ts-model-api";
+            import { shallowReactive, unref, MaybeRef, computed, customRef } from "vue";
             
             export type ChildLinkDecl = {
-                kind: "CHILD",
-                type: string,
-                optional: boolean,
-                multiple: boolean
+                kind: "CHILD";
+                type: string;
+                optional: boolean;
+                multiple: boolean;
             };
             export type ReferenceLinkDecl = {
-                kind: "REFERENCE",
-                type: string,
-                optional: Boolean
+                kind: "REFERENCE";
+                type: string;
+                optional: boolean;
             };
             export type PropertyDecl = {
-                kind: "PROPERTY",
-                type: string
+                kind: "PROPERTY";
+                type: string;
             };
             export type RoleDecl = ChildLinkDecl | ReferenceLinkDecl | PropertyDecl;
             export interface IVuejsGeneratedConcept extends IConceptJS {
@@ -82,104 +89,217 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 _concept: IVuejsGeneratedConcept;
                 _nextSibling?: INodeJS;
             }
-  
-            type INodeReferenceJS = any
+            
+            type INodeReferenceJS = any;
             const wrappedNodeCache = new Map<INodeReferenceJS, IVuejsTypedNode>();
-
             // https://stackoverflow.com/a/68488123
-            let combine = function*(...iterators: any[]) {
-              for (let it of iterators) yield* it;
+            const combine = function* (...iterators: any[]) {
+                for (const it of iterators) yield* it;
             };
             
             // satisfy typechecker as in https://stackoverflow.com/a/50603826
-            declare global  {
+            declare global {
                 interface ProxyConstructor {
-                    new <TSource extends object, TTarget extends object>(target: TSource, handler: ProxyHandler<TSource>): TTarget;
+                    new <TSource extends object, TTarget extends object>(
+                        target: TSource,
+                        handler: ProxyHandler<TSource>
+                    ): TTarget;
                 }
             }
-
-            function createProxy(C_Concept: IVuejsGeneratedConcept, node: INodeJS): IVuejsTypedNode {
+            
+            export const isSettingLock = {
+                isSetting: false,
+            };
+            
+            function createProxy(
+                concept: IVuejsGeneratedConcept,
+                node: INodeJS
+            ): IVuejsTypedNode {
+                const refs = new Map();
+                const triggers = new Map();
+                const getComputedRefForProperty = (role: string, feature: RoleDecl) => {
+                    const existingComputedRef = refs.get(role);
+                    if (existingComputedRef !== undefined) {
+                        return existingComputedRef;
+                    }
+                    const newComputedRef = customRef<string | number | boolean>(
+                        (track, trigger) => {
+                            triggers.set(role, trigger);
+                            return {
+                                get: () => {
+                                    track();
+                                    const raw = node.getPropertyValue(role);
+                                    switch (feature.type) {
+                                        case "INT":
+                                            return raw ? parseInt(raw!) : 0;
+                                        case "BOOLEAN":
+                                            return raw === "true";
+                                        case "STRING":
+                                            return raw ?? "";
+                                        default:
+                                            return ""; // enum
+                                    }
+                                },
+                                set: (value) => {
+                                    switch (feature.type) {
+                                        case "INT":
+                                            node.setPropertyValue(role, value.toString());
+                                            break;
+                                        case "BOOLEAN":
+                                            node.setPropertyValue(role, value ? "true" : "false");
+                                            break;
+                                        case "STRING":
+                                            // TODO Olekz type checking etc.
+                                            node.setPropertyValue(role, value as string);
+                                            break;
+                                        default:
+                                            throw new Error("Unknown property type"); // enum
+                                    }
+                                },
+                            };
+                        }
+                    );
+                    refs.set(role, newComputedRef);
+                    return newComputedRef;
+                };
+                const getComputedRefForChild = (role: string, feature: ChildLinkDecl) => {
+                    const existingComputedRef = refs.get(role);
+                    if (existingComputedRef !== undefined) {
+                        return existingComputedRef;
+                    }
+                    const newComputedRef = customRef<ITypedNode | ITypedNode[]>(
+                        (track, trigger) => {
+                            triggers.set(role, trigger);
+                            return {
+                                get: () => {
+                                    track();
+                                    const childArray = node
+                                        .getChildren(role)
+                                        .map((child) => LanguageRegistry.INSTANCE.wrapNode(child));
+                                    if (feature.multiple) {
+                                        // Object.freeze(childArray);
+                                        return childArray;
+                                    } else {
+                                        // return childArray;
+                                        return childArray[0];
+                                    }
+                                },
+                                set: (_value) => {
+                                    throw "can not set child";
+                                },
+                            };
+                        }
+                    );
+                    refs.set(role, newComputedRef);
+                    return newComputedRef;
+                };
+                const getComputedRefForRef = (role: string, feature: RoleDecl) => {
+                    const existingComputedRef = refs.get(role);
+                    if (existingComputedRef !== undefined) {
+                        return existingComputedRef;
+                    }
+                    const newComputedRef = customRef<ITypedNode>((track, trigger) => {
+                        triggers.set(role, trigger);
+                        return {
+                            get: () => {
+                                track();
+                                const target = node.getReferenceTargetNode(role);
+                                return target
+                                    ? LanguageRegistry.INSTANCE.wrapNode(target)
+                                    : undefined;
+                            },
+                            set: (value) => {
+                                const unwrappedValue = (
+                                    value?.unwrap ? value.unwrap() : value
+                                ) as INodeJS;
+                                node.setReferenceTargetNode(role, unwrappedValue);
+                            },
+                        };
+                    });
+                    refs.set(role, newComputedRef);
+                    return newComputedRef;
+                };
                 const proxyHandler: ProxyHandler<INodeJS> = {
                     get(_node: INodeJS, keyOrSymbol: string | symbol) {
-                        switch(keyOrSymbol) {
-                            // case Symbol.toStringTag: return C_Concept.fqName; break; // breaks reactivity for some reason
-                            case "_node": return _node; break;
-                            case "unwrap": return () => _node; break;
-                            case "_concept": return C_Concept; break;
-                            case "_parent": return _node.getParent(); break;
-                            case "_nextSibling": 
-                                const allSiblings = _node.getParent()?.getChildren(_node.getRoleInParent());
-                                if(allSiblings === undefined) return undefined;
-                                const index = allSiblings.map((c) => c.getReference()).indexOf(_node.getReference())
-                                return allSiblings[ (index + 1) % allSiblings.length]; // return next one and start from top when overflowing
-                                break;
+                        if (keyOrSymbol === "_refs") {
+                            return refs;
+                        } else if (keyOrSymbol === "_triggers") {
+                            return triggers;
+                        } else if (keyOrSymbol === "_node") {
+                            return _node;
+                        } else if (keyOrSymbol === "unwrap") {
+                            return () => _node;
+                        } else if (keyOrSymbol === "_concept") {
+                            return concept;
+                        } else if (keyOrSymbol === "_parent") {
+                            return _node.getParent();
+                        } else if (keyOrSymbol === "_nextSibling") {
+                            const allSiblings = _node
+                                .getParent()
+                                ?.getChildren(_node.getRoleInParent());
+                            if (allSiblings === undefined) return undefined;
+                            const index = allSiblings
+                                .map((c) => c.getReference())
+                                .indexOf(_node.getReference());
+                            return allSiblings[(index + 1) % allSiblings.length]; // return next one and start from top when overflowing
                         }
-                        const key = keyOrSymbol as string
-                        const feature = C_Concept.features.get(key)
-                        if(!feature) return undefined
-                        switch(feature.kind) {
+                        const key = keyOrSymbol as string;
+                        const feature = concept.features.get(key);
+                        if (!feature) return undefined;
+                        switch (feature.kind) {
                             case "PROPERTY":
-                                const raw = _node.getPropertyValue(key)
-                                switch(feature.type) {
-                                    case "INT": return raw ? parseInt(raw!!) : 0
-                                    case "BOOLEAN": return raw === "true"
-                                    case "STRING": return raw ?? ""
-                                    default: return "" // enum
-                                }
+                                return getComputedRefForProperty(key, feature).value;
                             case "CHILD":
-                                const childArray = _node.getChildren(key).map((child) => LanguageRegistry.INSTANCE.wrapNode(child))
-                                if(feature.multiple) {
-                                    return childArray;
-                                } else {
-                                    return childArray[0];
-                                }
+                                return getComputedRefForChild(key, feature).value;
                             case "REFERENCE":
-                                let target = _node.getReferenceTargetNode(key);
-                                return target ? LanguageRegistry.INSTANCE.wrapNode(target) : undefined;
+                                return getComputedRefForRef(key, feature).value;
                         }
                     },
                     set(_node: INodeJS, key: string, maybeRefValue: MaybeRef<INodeJS | any>) {
-                        const feature = C_Concept.features.get(key)
-                        if(!feature) return false
-                        const value = unref(maybeRefValue)
-                        switch(feature.kind) {
+                        isSettingLock.isSetting = false;
+                        const feature = concept.features.get(key);
+                        if (!feature) return false;
+                        const value = unref(maybeRefValue);
+                        switch (feature.kind) {
                             case "PROPERTY":
-                                switch(feature.type) {
-                                    case "INT": _node.setPropertyValue(key, value.toString()); break;
-                                    case "BOOLEAN": _node.setPropertyValue(key, value ? "true" : "false"); break;
-                                    case "STRING": _node.setPropertyValue(key, value); break;
-                                    default: throw new Error("Unknown property type") // enum
-                                };
+                                getComputedRefForProperty(key, feature).value = value;
                                 break;
                             case "CHILD":
                                 throw Error("Can't update child links yet");
                                 break;
                             case "REFERENCE":
-                                const unwrappedValue = value?.unwrap ? value.unwrap() : value;
-                                _node.setReferenceTargetNode(key, unwrappedValue);
+                                getComputedRefForRef(key, feature).value = value;
                                 break;
                         }
+                        isSettingLock.isSetting = false;
                         return true;
                     },
                     ownKeys(_node: INodeJS) {
-                        return Array.from<string | symbol>(C_Concept.features.keys()).concat("_node", "_concept")
+                        return Array.from<string | symbol>(concept.features.keys()).concat(
+                            "_node",
+                            "_concept"
+                        );
                     },
                     has(_node: INodeJS, key: string) {
-                        return Array.from<string | symbol>(C_Concept.features.keys()).concat("_node", "_concept").includes(key)
-                    }
-                }
-                return shallowReactive(new Proxy<INodeJS, IVuejsTypedNode>(node, proxyHandler))
+                        return Array.from<string | symbol>(concept.features.keys())
+                            .concat("_node", "_concept")
+                            .includes(key);
+                    },
+                };
+                return new Proxy<INodeJS, IVuejsTypedNode>(node, proxyHandler);
             }
             
-            export function wrapNode(C_Concept: IVuejsGeneratedConcept, node: INodeJS): IVuejsTypedNode {
-                const ref = node.getReference()
-                if(!wrappedNodeCache.has(ref)) {
-                    wrappedNodeCache.set(ref, shallowReactive(createProxy(C_Concept, node)))
+            export function wrapNode(
+                C_Concept: IVuejsGeneratedConcept,
+                node: INodeJS
+            ): IVuejsTypedNode {
+                const ref = node.getReference();
+                if (!wrappedNodeCache.has(ref)) {
+                    wrappedNodeCache.set(ref, createProxy(C_Concept, node));
                 }
                 console.log("wrappedNodeCache has", wrappedNodeCache.size, "elements");
-                return wrappedNodeCache.get(ref)!
+                return wrappedNodeCache.get(ref)!;
             }
-            
         """.trimIndent())
     }
 
@@ -197,7 +317,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 LanguageRegistry
             } from "@modelix/ts-model-api";
             
-            import { computed, WritableComputedRef, shallowReactive, Ref, unref, triggerRef } from "vue";
+            import { computed, WritableComputedRef, shallowReactive, Ref, unref, toRaw, triggerRef } from "vue";
             import { IVuejsGeneratedConcept, IVuejsTypedNode, wrapNode, RoleDecl } from "./index";
             
             function triggerRefValue(ref: Ref, value: any) {
@@ -273,6 +393,19 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
         }
         val interfaceList = concept.getDirectSuperConcepts().joinToString(", ") { it.tsInterfaceRef(concept.language) }.ifEmpty { "IVuejsTypedNode" }
         // TODO extend first super concept do reduce the number of generated members
+        val featureInterfaceType: String;
+        if (concept.getDirectSuperConcepts().count() <= 1 && features.isEmpty()) {
+            featureInterfaceType = "export type ${concept.nodeWrapperInterfaceName()} = $interfaceList;"
+        } else {
+            featureInterfaceType =
+                """
+                export interface ${concept.nodeWrapperInterfaceName()} extends $interfaceList {
+                    ${features}
+                }
+                """.trimIndent()
+        }
+
+
         return """
             
             export class ${concept.conceptWrapperImplName()} extends GeneratedConcept implements IVuejsGeneratedConcept {
@@ -291,12 +424,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             }
             export const ${concept.conceptWrapperInterfaceName()} = new ${concept.conceptWrapperImplName()}("${concept.uid}")
             
-            export interface ${concept.nodeWrapperInterfaceName()} extends $interfaceList {
-                ${features}
-            }
+            $featureInterfaceType
             
             export function isOfConcept_${concept.name}(node: IVuejsTypedNode | Ref<IVuejsTypedNode>): node is ${concept.nodeWrapperInterfaceName()} {
-                return ${concept.conceptWrapperInterfaceName()} === unref(node)._concept;
+                return ${concept.conceptWrapperInterfaceName()} === toRaw(unref(node)._concept);
             }
             
         """.trimIndent()
