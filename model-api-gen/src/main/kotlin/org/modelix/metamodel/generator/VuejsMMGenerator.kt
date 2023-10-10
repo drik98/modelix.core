@@ -339,7 +339,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                         this.nodeWrappers.set("${concept.uid}", wrapNode.bind(this, ${concept.conceptWrapperInterfaceName()}))
                     """.trimIndent() }}
                 }
-                public getConcepts() {
+                public getConcepts() : Array<GeneratedConcept> {
                     return [$conceptNamesList]
                 }
             }
