@@ -88,6 +88,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 _node: INodeJS;
                 _concept: IVuejsGeneratedConcept;
                 _nextSibling?: INodeJS;
+                _parent?: INodeJS;
             }
             
             type INodeReferenceJS = any;
@@ -221,27 +222,31 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 };
                 const proxyHandler: ProxyHandler<INodeJS> = {
                     get(_node: INodeJS, keyOrSymbol: string | symbol) {
-                        if (keyOrSymbol === "_refs") {
-                            return refs;
-                        } else if (keyOrSymbol === "_triggers") {
-                            return triggers;
-                        } else if (keyOrSymbol === "_node") {
-                            return _node;
-                        } else if (keyOrSymbol === "unwrap") {
-                            return () => _node;
-                        } else if (keyOrSymbol === "_concept") {
-                            return concept;
-                        } else if (keyOrSymbol === "_parent") {
-                            return _node.getParent();
-                        } else if (keyOrSymbol === "_nextSibling") {
-                            const allSiblings = _node
-                                .getParent()
-                                ?.getChildren(_node.getRoleInParent());
-                            if (allSiblings === undefined) return undefined;
-                            const index = allSiblings
-                                .map((c) => c.getReference())
-                                .indexOf(_node.getReference());
-                            return allSiblings[(index + 1) % allSiblings.length]; // return next one and start from top when overflowing
+            			switch (keyOrSymbol) {
+            				// case Symbol.toStringTag: return C_Concept.fqName; break; // breaks reactivity for some reason
+            				case "_refs":
+            					return refs;
+            				case "_triggers":
+            					return triggers;
+            				case "_node":
+            					return _node;
+            					break;
+            				case "unwrap":
+            					return () => _node;
+            					break;
+            				case "_concept":
+            					return concept;
+            					break;
+            				case "_parent":
+            					return _node.getParent();
+            					break;
+            				case "_nextSibling": {
+            					const allSiblings = _node.getParent()?.getChildren(_node.getRoleInParent());
+            					if (allSiblings === undefined) return undefined;
+            					const index = allSiblings.map((c) => c.getReference()).indexOf(_node.getReference());
+            					return allSiblings[(index + 1) % allSiblings.length]; // return next one and start from top when overflowing
+            					break;
+            				}
                         }
                         const key = keyOrSymbol as string;
                         const feature = concept.features.get(key);
@@ -297,7 +302,6 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 if (!wrappedNodeCache.has(ref)) {
                     wrappedNodeCache.set(ref, createProxy(C_Concept, node));
                 }
-                console.log("wrappedNodeCache has", wrappedNodeCache.size, "elements");
                 return wrappedNodeCache.get(ref)!;
             }
         """.trimIndent())
