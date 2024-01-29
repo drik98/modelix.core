@@ -178,8 +178,8 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             			.map((child) => LanguageRegistry.INSTANCE.wrapNode(child) as T);
             	}
             	
-            	createNew(index: number = -1): T {
-            		const newRawNode = this.#containingNode.addNewChild(this.#role, index, this.#concept);
+            	createNew(index: number = -1, specifiedConcept: IConceptJS = this.#concept): T {
+            		const newRawNode = this.#containingNode.addNewChild(this.#role, index, specifiedConcept);
             		return LanguageRegistry.INSTANCE.wrapNode(newRawNode) as T;
             	}
             	replaceAll(newArray: T[]): void {
@@ -488,11 +488,14 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                         const key = keyOrSymbol as string;
 	            		if (/^__new_child_/.test(key)) {
 	            			// Special synthetic method for instantiating a non-multiple child. (The multiple version of this
-	            			// is in ChildArrayImpl.)
-	            			const role = key.replace("__new_child_", "")
-	            			const childConcept = concept.getChildConcepts().get(role)
-	            			_node.addNewChild(role, 0, childConcept)
-	            			return getComputedRefForChild(role, concept.features.get(role) as ChildLinkDecl).value
+	            			// is in ChildArrayImpl.) Can be given an IConceptJS to use for adding the child, otherwise it
+                            // uses the one that our own concept specifies.
+				            return (specifiedChildConcept: IConceptJS) => {
+				            	const role = key.replace("__new_child_", "");
+				            	const childConcept = specifiedChildConcept ? specifiedChildConcept : concept.getChildConcepts().get(role);
+				            	_node.addNewChild(role, 0, childConcept);
+				            	return getComputedRefForChild(role, concept.features.get(role) as ChildLinkDecl).value;
+				            }
 	            		}
                         const feature = concept.features.get(key);
                         if (!feature) return undefined;
@@ -641,7 +644,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     } else {
                         """
                         ${feature.generatedName}: $N_InterfaceName;
-                        __new_child_${feature.generatedName}: () => $N_InterfaceName;
+                        __new_child_${feature.generatedName}: (specifiedChildConcept?: IConceptJS) => $N_InterfaceName;
                         """.trimIndent()
                     }
                 }
