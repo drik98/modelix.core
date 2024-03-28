@@ -275,7 +275,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                 getComputedRefForProperty(key, feature).value = value;
                                 break;
                             case "CHILD":
-                                throw Error("Can't update child links yet");
+                                throw new Error("Can't update child links yet");
                                 break;
                             case "REFERENCE":
                                 getComputedRefForRef(key, feature).value = value;
