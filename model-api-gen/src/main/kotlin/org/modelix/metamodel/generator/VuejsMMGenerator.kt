@@ -48,6 +48,8 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             ${languages.getLanguages().joinToString("\n") { """
                 import { ${it.simpleClassName()} } from "./${it.simpleClassName()}";
             """.trimIndent() }}
+            export * from "./proxy";
+
             export function registerLanguages() {
                 ${languages.getLanguages().joinToString("\n") { """
                     LanguageRegistry.INSTANCE.register(${it.simpleClassName()}.INSTANCE);
@@ -419,7 +421,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             }
             
             export function isOfConcept_${concept.name}(node: IVuejsTypedNode | Ref<IVuejsTypedNode>): node is ${concept.nodeWrapperInterfaceName()} {
-                return ${concept.conceptWrapperInterfaceName()} === unref(node).?_concept;
+                return ${concept.conceptWrapperInterfaceName()} === toRaw(unref(node).?_concept);
             }
             
         """.trimIndent()
