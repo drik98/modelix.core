@@ -89,6 +89,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 _concept: IVuejsGeneratedConcept;
                 _nextSibling?: INodeJS;
                 _parent?: INodeJS;
+                remove: () => {};
             }
 
             type INodeReferenceJS = any;
@@ -236,6 +237,8 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                             case "_node":
                                 return _node;
                                 break;
+                            case "remove":
+                                return () => _node.getParent()?.removeChild(_node);
                             case "unwrap":
                                 return () => _node;
                                 break;
@@ -416,7 +419,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
             }
             
             export function isOfConcept_${concept.name}(node: IVuejsTypedNode | Ref<IVuejsTypedNode>): node is ${concept.nodeWrapperInterfaceName()} {
-                return ${concept.conceptWrapperInterfaceName()} === unref(node)._concept;
+                return ${concept.conceptWrapperInterfaceName()} === unref(node).?_concept;
             }
             
         """.trimIndent()
