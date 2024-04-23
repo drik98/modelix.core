@@ -420,7 +420,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 ${features}
             }
             
-            export function isOfConcept_${concept.name}(node: MaybeRef<IVuejsTypedNode | null | undefined>): node is ${concept.nodeWrapperInterfaceName()} {
+            export function isOfConcept_${concept.name}(node: MaybeRef<IVuejsTypedNode | null | undefined>): node is MaybeRef<${concept.nodeWrapperInterfaceName()}> {
                 return ${concept.conceptWrapperInterfaceName()} === toRaw(unref(node).?_concept);
             }
             
