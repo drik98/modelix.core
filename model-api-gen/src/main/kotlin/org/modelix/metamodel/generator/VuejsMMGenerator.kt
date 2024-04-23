@@ -326,7 +326,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 LanguageRegistry
             } from "@modelix/ts-model-api";
             
-            import { computed, WritableComputedRef, shallowReactive, Ref, unref, triggerRef } from "vue";
+            import { computed, WritableComputedRef, shallowReactive, Ref, MaybeRef, unref, triggerRef } from "vue";
             import { IVuejsGeneratedConcept, IVuejsTypedNode, RoleDecl, wrapNode } from "./proxy";
             
             ${language.languageDependencies().joinToString("\n") {
@@ -420,7 +420,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 ${features}
             }
             
-            export function isOfConcept_${concept.name}(node: IVuejsTypedNode | Ref<IVuejsTypedNode>): node is ${concept.nodeWrapperInterfaceName()} {
+            export function isOfConcept_${concept.name}(node: MaybeRef<IVuejsTypedNode | null | undefined>): node is MaybeRef<${concept.nodeWrapperInterfaceName()}> {
                 return ${concept.conceptWrapperInterfaceName()} === toRaw(unref(node).?_concept);
             }
             
