@@ -385,6 +385,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     val entityType = "$languagePrefix${typeRef.nodeWrapperInterfaceName()}"
                     """
                         get ${feature.generatedName}(): $entityType | undefined;
+                        set ${feature.generatedName}(value: $entityType | undefined);
                     """.trimIndent()
                 }
                 is ProcessedChildLink -> {
