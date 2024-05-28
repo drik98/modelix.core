@@ -62,10 +62,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 IConceptJS,
                 INodeJS,
                 ITypedNode,
-            LanguageRegistry,
+                LanguageRegistry,
             } from "@modelix/ts-model-api";
             import { unref, MaybeRef, customRef } from "vue";
-
+            
             export type ChildLinkDecl = {
                 kind: "CHILD";
                 type: string;
@@ -93,14 +93,10 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 _parent?: INodeJS;
                 remove: () => {};
             }
-
+            
             type INodeReferenceJS = any;
             const wrappedNodeCache = new Map<INodeReferenceJS, IVuejsTypedNode>();
-            // https://stackoverflow.com/a/68488123
-            const combine = function* (...iterators: any[]) {
-                for (const it of iterators) yield* it;
-            };
-
+            
             // satisfy typechecker as in https://stackoverflow.com/a/50603826
             declare global {
                 interface ProxyConstructor {
@@ -110,27 +106,24 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     ): TTarget;
                 }
             }
-
-            export const isSettingLock = {
-                isSetting: false,
-            };
-
+            
             export type ChangeCallback = (value: any) => void;
             export type ChangeHandler = (updateWrappedNode: ChangeCallback) => ChangeCallback;
-
+            
             // by default, just call the callback
-            var changeHandler: ChangeHandler = (updateWrappedNode: ChangeCallback) =>  (value: any) => updateWrappedNode(value);
-
+            var changeHandler: ChangeHandler = (updateWrappedNode: ChangeCallback) => (value: any) =>
+                updateWrappedNode(value);
+            
             /**
-            * Allows to dynamically decide if a change should be applied to the wrapped node or not.
-            * Also allows to make some changes to the value before storing it.
-            *
-            * @param newChangeHandler the handler which is deciding if updating the wrapped node and with what value
-            */
+             * Allows to dynamically decide if a change should be applied to the wrapped node or not.
+             * Also allows to make some changes to the value before storing it.
+             *
+             * @param newChangeHandler the handler which is deciding if updating the wrapped node and with what value
+             */
             export function setModelChangeHandler(newChangeHandler: ChangeHandler) {
-            changeHandler = newChangeHandler
+                changeHandler = newChangeHandler;
             }
-
+            
             function createProxy(concept: IVuejsGeneratedConcept, node: INodeJS): IVuejsTypedNode {
                 const refs = new Map();
                 const triggers = new Map();
@@ -211,7 +204,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     if (existingComputedRef !== undefined) {
                         return existingComputedRef;
                     }
-                    const newComputedRef = customRef<ITypedNode>((track, trigger) => {
+                    const newComputedRef = customRef<ITypedNode | undefined>((track, trigger) => {
                         triggers.set(role, trigger);
                         return {
                             get: () => {
@@ -238,24 +231,19 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                 return triggers;
                             case "_node":
                                 return _node;
-                                break;
                             case "remove":
                                 return () => _node.getParent()?.removeChild(_node);
                             case "unwrap":
                                 return () => _node;
-                                break;
                             case "_concept":
                                 return concept;
-                                break;
                             case "_parent":
                                 return _node.getParent();
-                                break;
                             case "_nextSibling": {
                                 const allSiblings = _node.getParent()?.getChildren(_node.getRoleInParent());
                                 if (allSiblings === undefined) return undefined;
                                 const index = allSiblings.map((c) => c.getReference()).indexOf(_node.getReference());
                                 return allSiblings[(index + 1) % allSiblings.length]; // return next one and start from top when overflowing
-                                break;
                             }
                         }
                         const key = keyOrSymbol as string;
@@ -271,7 +259,6 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                         }
                     },
                     set(_node: INodeJS, key: string, maybeRefValue: MaybeRef<INodeJS | any>) {
-                        isSettingLock.isSetting = false;
                         const feature = concept.features.get(key);
                         if (!feature) return false;
                         const value = unref(maybeRefValue);
@@ -280,13 +267,11 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                                 getComputedRefForProperty(key, feature).value = value;
                                 break;
                             case "CHILD":
-                                throw new Error("Can't update child links yet");
-                                break;
+                                throw Error("Can't update child links yet");
                             case "REFERENCE":
                                 getComputedRefForRef(key, feature).value = value;
                                 break;
                         }
-                        isSettingLock.isSetting = false;
                         return true;
                     },
                     ownKeys(_node: INodeJS) {
@@ -300,7 +285,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 };
                 return new Proxy<INodeJS, IVuejsTypedNode>(node, proxyHandler);
             }
-
+            
             export function wrapNode(C_Concept: IVuejsGeneratedConcept, node: INodeJS): IVuejsTypedNode {
                 const ref = node.getReference();
                 if (!wrappedNodeCache.has(ref)) {
@@ -308,7 +293,6 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                 }
                 return wrappedNodeCache.get(ref)!;
             }
-
         """.trimIndent())
     }
 
