@@ -55,7 +55,7 @@ class VuejsMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameCon
                     LanguageRegistry.INSTANCE.register(${it.simpleClassName()}.INSTANCE);
                 """.trimIndent() }}
             }
-            """.trimIndent()
+            """.trimIndent())
            
         outputDir.resolve("proxy.ts").writeText("""
             import {
