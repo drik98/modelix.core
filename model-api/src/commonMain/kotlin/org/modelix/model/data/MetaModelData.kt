@@ -34,6 +34,11 @@ sealed interface IDeprecatable {
 }
 
 @Serializable
+data class MetaProperties(
+    val alias: String?= null
+)
+
+@Serializable
 data class ConceptData(
     val uid: String? = null,
     val name: String,
@@ -42,6 +47,7 @@ data class ConceptData(
     val children: List<ChildLinkData> = emptyList(),
     val references: List<ReferenceLinkData> = emptyList(),
     val extends: List<String> = emptyList(),
+    val metaProperties: MetaProperties? = null,
     override val deprecationMessage: String? = null
 ) : IDeprecatable
 
