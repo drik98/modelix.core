@@ -85,6 +85,12 @@ class KotlinGeneratorTest {
 
         val indexFileContents = outputDir.resolve("index.ts").readText()
         assertFalse(indexFileContents.contains("export * from"), "Does not include barrels when not explicitly opted in.")
+
+        val generatedEntitiesLanguageContents = outputDir.resolve("L_org_modelix_entities.ts").readText()
+        assertFalse(
+            generatedEntitiesLanguageContents.contains("""new ChildListAccessor(this._node, "properties", C_Property)"""),
+            "Does not include concept for child accessors when not explicitly opted in.",
+        )
     }
 
     @Test
@@ -125,6 +131,48 @@ class KotlinGeneratorTest {
             indexFileContents,
             """export * from "./L_org_modelix_entities";""",
             message = "Includes barrels when explicitly opted in.",
+        )
+    }
+
+    @Test
+    fun test_ts_with_concepts_for_child_accessors() {
+        val input = """
+            name: org.modelix.entities
+            concepts:
+            - name: Entity
+              properties:
+              - name: name
+              children:
+              - name: properties
+                type: Property
+                multiple: true
+                optional: true
+            - name: Property
+              children:
+              - name: type
+                type: Type
+                optional: false
+            - name: Type
+            - name: EntityType
+              extends:
+              - Type
+              references:
+              - name: entity
+                type: Entity
+                optional: false
+            enums: []
+        """.trimIndent()
+
+        val language = Yaml.default.decodeFromString<LanguageData>(input)
+        val outputDir = File("build/test-generator-output").toPath()
+        TypescriptMMGenerator(outputDir, NameConfig(), includeConceptForChildAccessors = true)
+            .generate(LanguageSet(listOf(language)).process())
+
+        val generatedEntitiesLanguageContents = outputDir.resolve("L_org_modelix_entities.ts").readText()
+        assertContains(
+            generatedEntitiesLanguageContents,
+            """new ChildListAccessor(this._node, "properties", C_Property)""",
+            message = "Includes concept for child accessors when explicitly opted in.",
         )
     }
 

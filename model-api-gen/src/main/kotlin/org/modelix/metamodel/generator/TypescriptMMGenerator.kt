@@ -8,7 +8,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
-class TypescriptMMGenerator(val outputDir: Path, val nameConfig: NameConfig = NameConfig(), private val includeTsBarrels: Boolean = false) {
+class TypescriptMMGenerator(
+    val outputDir: Path,
+    val nameConfig: NameConfig = NameConfig(),
+    private val includeBarrels: Boolean = false,
+    private val includeConceptForChildAccessors: Boolean = false,
+) {
 
     private fun LanguageData.packageDir(): Path {
         val packageName = name
@@ -68,7 +73,7 @@ class TypescriptMMGenerator(val outputDir: Path, val nameConfig: NameConfig = Na
             """
             }}
             }
-            ${if (!includeTsBarrels) {
+            ${if (!includeBarrels) {
                 ""
             } else {
                 languages.getLanguages().joinToString("\n") {
@@ -196,7 +201,7 @@ class TypescriptMMGenerator(val outputDir: Path, val nameConfig: NameConfig = Na
                     val typeRef = feature.type.resolved
                     val languagePrefix = typeRef.languagePrefix(concept.language)
                     """
-                        public ${feature.generatedName}: $accessorClassName<$languagePrefix${typeRef.nodeWrapperInterfaceName()}> = new $accessorClassName(this._node, "${feature.originalName}")
+                        public ${feature.generatedName}: $accessorClassName<$languagePrefix${typeRef.nodeWrapperInterfaceName()}> = new $accessorClassName(this._node, "${feature.originalName}"${if (includeConceptForChildAccessors) ", $languagePrefix${typeRef.conceptWrapperInterfaceName()}" else ""})
                     """
                 }
                 else -> ""

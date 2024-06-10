@@ -28,6 +28,15 @@ const NODE_DATA_WITH_SINGLE_CHILD_ACCESSOR = {
   },
 };
 
+test("new element can be added to SingleChildAccessor without providing the base concept", () => {
+  const { typedNode } = useFakeNode<BaseCommentAttribute>(
+    "withSingleChildAccessor",
+    NODE_DATA_WITH_SINGLE_CHILD_ACCESSOR
+  );
+  const childNode = typedNode.commentedNode.setNew();
+  expect(isOfConcept_BaseConcept(childNode)).toBeTruthy();
+});
+
 test("new element can be added to SingleChildAccessor when provided the correct base concept", () => {
   const { typedNode } = useFakeNode<BaseCommentAttribute>(
     "withSingleChildAccessor",

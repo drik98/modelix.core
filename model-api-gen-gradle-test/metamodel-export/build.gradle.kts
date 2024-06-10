@@ -31,6 +31,7 @@ metamodel {
     }
     registrationHelperName = "org.modelix.apigen.test.ApigenTestLanguages"
     conceptPropertiesInterfaceName = "org.modelix.apigen.test.IMetaConceptProperties"
+    includeTypescriptConceptForChildAccessors = true
 }
 
 dependencies {
