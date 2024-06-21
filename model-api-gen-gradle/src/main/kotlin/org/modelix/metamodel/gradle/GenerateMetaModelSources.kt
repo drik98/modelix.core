@@ -43,6 +43,9 @@ abstract class GenerateMetaModelSources @Inject constructor(of: ObjectFactory) :
     val includeTypescriptBarrels: Property<Boolean> = of.property(Boolean::class.java)
 
     @get:Input
+    val includeTypescriptConceptForChildAccessors: Property<Boolean> = of.property(Boolean::class.java)
+
+    @get:Input
     val includedNamespaces: ListProperty<String> = of.listProperty(String::class.java)
 
     @get:Input
@@ -117,7 +120,12 @@ abstract class GenerateMetaModelSources @Inject constructor(of: ObjectFactory) :
 
         val typescriptOutputDir = this.typescriptOutputDir.orNull?.asFile
         if (typescriptOutputDir != null) {
-            val tsGenerator = TypescriptMMGenerator(typescriptOutputDir.toPath(), nameConfig.get(), includeTypescriptBarrels.get())
+            val tsGenerator = TypescriptMMGenerator(
+                outputDir = typescriptOutputDir.toPath(),
+                nameConfig = nameConfig.get(),
+                includeBarrels = includeTypescriptBarrels.get(),
+                includeConceptForChildAccessors = includeTypescriptConceptForChildAccessors.get(),
+            )
             tsGenerator.generate(processedLanguages)
         }
     }

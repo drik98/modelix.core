@@ -4,7 +4,7 @@ import {LanguageRegistry} from "./LanguageRegistry.js";
 import type {IConceptJS} from "./IConceptJS.js";
 
 export abstract class ChildrenAccessor<ChildT extends ITypedNode> implements Iterable<ChildT> {
-  constructor(public parentNode: INodeJS, public role: string | undefined) {
+  constructor(public parentNode: INodeJS, public role: string | undefined, public concept?: IConceptJS | undefined) {
   }
 
   [Symbol.iterator](): Iterator<ChildT> {
@@ -21,22 +21,36 @@ export abstract class ChildrenAccessor<ChildT extends ITypedNode> implements Ite
 }
 
 export class ChildListAccessor<ChildT extends ITypedNode> extends ChildrenAccessor<ChildT> {
-  constructor(parentNode: INodeJS, role: string | undefined) {
-    super(parentNode, role);
+  constructor(parentNode: INodeJS, role: string | undefined, concept?: IConceptJS | undefined) {
+    super(parentNode, role, concept);
   }
 
-  public insertNew(index: number, subconcept: IConceptJS | undefined): ChildT {
-    return LanguageRegistry.INSTANCE.wrapNode(this.parentNode.addNewChild(this.role, index, subconcept)) as ChildT
+  /**
+   * Adds a new element at the specified index to the list
+   * @param subconcept The concept of the child which will be created.
+   *   Should be a concept extending the base concept.
+   *   If not provided the base concept of the child accessor will be used if possible.
+   * @returns the newly created child note
+   */
+  public insertNew(index: number, subconcept?: IConceptJS | undefined): ChildT {
+    return LanguageRegistry.INSTANCE.wrapNode(this.parentNode.addNewChild(this.role, index, subconcept ?? this.concept)) as ChildT
   }
 
-  public addNew(subconcept: IConceptJS | undefined): ChildT {
+  /**
+   * Adds a new element to the end of the list
+   * @param subconcept The concept of the child which will be created.
+   *   Should be a concept extending the base concept.
+   *   If not provided the base concept of the child accessor will be used if possible.
+   * @returns the newly created child note
+   */
+  public addNew(subconcept?: IConceptJS | undefined): ChildT {
     return this.insertNew(-1, subconcept)
   }
 }
 
 export class SingleChildAccessor<ChildT extends ITypedNode> extends ChildrenAccessor<ChildT> {
-  constructor(parentNode: INodeJS, role: string | undefined) {
-    super(parentNode, role);
+  constructor(parentNode: INodeJS, role: string | undefined, concept?: IConceptJS | undefined) {
+    super(parentNode, role, concept);
   }
 
   public get(): ChildT | undefined {
@@ -44,11 +58,18 @@ export class SingleChildAccessor<ChildT extends ITypedNode> extends ChildrenAcce
     return children.length === 0 ? undefined : children[0]
   }
 
+  /**
+   * Creates a new child node. Removes the previous one if it exists.
+   * @param subconcept The concept of the child which will be created.
+   *   Should be a concept extending the base concept.
+   *   If not provided the base concept of the child accessor will be used if possible.
+   * @returns the newly created child note
+   */
   public setNew(subconcept?: IConceptJS | undefined): ChildT {
     const existing = this.get();
     if (existing !== undefined) {
       existing.remove();
     }
-    return this.wrapChild(this.parentNode.addNewChild(this.role, 0, subconcept))
+    return this.wrapChild(this.parentNode.addNewChild(this.role, 0, subconcept ?? this.concept))
   }
 }
