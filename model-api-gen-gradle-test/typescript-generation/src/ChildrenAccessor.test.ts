@@ -8,6 +8,7 @@ import {
   BaseCommentAttribute,
   C_BaseCommentAttribute,
   C_BaseConcept,
+  C_InterfacePart,
   C_TypeAnnotated,
   isOfConcept_BaseConcept,
   isOfConcept_TypeAnnotated,
@@ -54,4 +55,12 @@ test("new element can be added to SingleChildAccessor when provided a sub concep
   const childNode = typedNode.commentedNode.setNew(C_TypeAnnotated);
   expect(isOfConcept_TypeAnnotated(childNode)).toBeTruthy();
   expect(isOfConcept_BaseConcept(childNode)).toBeTruthy();
+});
+
+test("new element cannot be added to SingleChildAccessor when provided sub concept does not extend base concept", () => {
+  const { typedNode } = useFakeNode<BaseCommentAttribute>(
+    "withSingleChildAccessor",
+    NODE_DATA_WITH_SINGLE_CHILD_ACCESSOR
+  );
+  expect(() => typedNode.commentedNode.setNew(C_InterfacePart)).toThrow();
 });

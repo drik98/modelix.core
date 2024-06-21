@@ -28,18 +28,22 @@ export class ChildListAccessor<ChildT extends ITypedNode> extends ChildrenAccess
   /**
    * Adds a new element at the specified index to the list
    * @param subconcept The concept of the child which will be created.
-   *   Should be a concept extending the base concept.
+   *   Should be a concept extending the base concept. If it is not a runtime error will be thrown.
    *   If not provided the base concept of the child accessor will be used if possible.
    * @returns the newly created child note
    */
   public insertNew(index: number, subconcept?: IConceptJS | undefined): ChildT {
+    if(!verifySubConcept(subconcept, this.concept)) {
+      throw new Error(`The provided subconcept "${subconcept?.getUID()}" cannot be applied to the base concept "${this.concept?.getUID()}".`)
+    }
+
     return LanguageRegistry.INSTANCE.wrapNode(this.parentNode.addNewChild(this.role, index, subconcept ?? this.concept)) as ChildT
   }
 
   /**
    * Adds a new element to the end of the list
    * @param subconcept The concept of the child which will be created.
-   *   Should be a concept extending the base concept.
+   *   Should be a concept extending the base concept. If it is not a runtime error will be thrown.
    *   If not provided the base concept of the child accessor will be used if possible.
    * @returns the newly created child note
    */
@@ -61,15 +65,40 @@ export class SingleChildAccessor<ChildT extends ITypedNode> extends ChildrenAcce
   /**
    * Creates a new child node. Removes the previous one if it exists.
    * @param subconcept The concept of the child which will be created.
-   *   Should be a concept extending the base concept.
+   *   Should be a concept extending the base concept. If it is not a runtime error will be thrown.
    *   If not provided the base concept of the child accessor will be used if possible.
    * @returns the newly created child note
    */
   public setNew(subconcept?: IConceptJS | undefined): ChildT {
+    if(!verifySubConcept(subconcept, this.concept)) {
+      throw new Error(`The provided subconcept "${subconcept?.getUID()}" cannot be applied to the base concept "${this.concept?.getUID()}".`)
+    }
+
     const existing = this.get();
     if (existing !== undefined) {
       existing.remove();
     }
     return this.wrapChild(this.parentNode.addNewChild(this.role, 0, subconcept ?? this.concept))
   }
+}
+
+/**
+ * Checks whether the provided sub concept is an extension of the base concept
+ * @param subconcept A concept which should extend the base concept
+ * @param baseConcept The base concept for the child accessor notes
+ * @returns whether the provided sub concept is not not an extension of the base concept
+ */
+function verifySubConcept(
+  subconcept: IConceptJS | undefined,
+  concept: IConceptJS | undefined
+): boolean {
+  if (!subconcept || !concept) {
+    return true;
+  }
+  return (
+    subconcept.getUID() === concept.getUID() ||
+    subconcept
+      .getDirectSuperConcepts()
+      .some((superConcept) => verifySubConcept(superConcept, concept))
+  );
 }
